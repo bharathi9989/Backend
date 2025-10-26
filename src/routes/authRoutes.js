@@ -1,8 +1,7 @@
 import { Router } from "express";
 import { loginUser, registerUser } from "../controllers/userController.js";
-import { protect } from "../middlewares/authMiddleware.js";
 
-const authRouter = Router();
+const authRoutes = Router();
 
 /**
  * @desc Register a new user
@@ -10,8 +9,8 @@ const authRouter = Router();
  * @access Public
  */
 
-authRouter.post("/register", registerUser);
+authRoutes.post("/register", registerUser);
 
-authRouter.get("/login", loginUser);
+authRoutes.get("/login", loginUser);
 
-export default authRouter;
+export default authRoutes;

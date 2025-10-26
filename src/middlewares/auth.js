@@ -7,7 +7,7 @@ export default async function auth(req, res, next) {
     // 1️⃣ Check if token exists in header
 
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startWith("Bearer")) {
+    if (!authHeader || !authHeader.startsWith("Bearer")) {
       return res.status(401).json({
         message: "No Token Provided",
       });
