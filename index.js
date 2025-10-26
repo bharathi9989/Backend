@@ -14,9 +14,13 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use("/api/auth",authRouter)
+app.get("/", (req, res) => {
+  res.send("Auction Backend Running ✅");
+});
+
+app.use("/api/auth", authRouter);
 
 app.listen(process.env.PORT, () => {
-  console.log("Application is Working well at ");
+  console.log("Application is Working well at ", process.env.PORT);
   connectDB();
 });

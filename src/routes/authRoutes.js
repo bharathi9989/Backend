@@ -1,12 +1,17 @@
 import { Router } from "express";
-import { login, register } from "../controllers/userController.js";
-import {  protect } from "../middlewares/authMiddleware.js";
+import { loginUser, registerUser } from "../controllers/userController.js";
+import { protect } from "../middlewares/authMiddleware.js";
 
 const authRouter = Router();
 
-authRouter.use("/register", register);
-authRouter.use("/login", login);
-authRouter.use("/getMe",protect, login);
+/**
+ * @desc Register a new user
+ * @route POST /api/auth/register
+ * @access Public
+ */
 
+authRouter.post("/register", registerUser);
+
+authRouter.get("/login", loginUser);
 
 export default authRouter;
