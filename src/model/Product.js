@@ -11,15 +11,21 @@
 
 import mongoose, { model, Schema } from "mongoose";
 
-const productSchema = Schema({
-  seller: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  title: { type: String, required: true },
-  description: { type: String },
-  images: [String],
-  category: { type: String, required: true },
-  inventoryCount: { type: Number, default: 1 },
-  createdAt: { type: Date, default: Date.now },
-});
+const productSchema = Schema(
+  {
+    seller: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    title: { type: String, required: true },
+    description: { type: String },
+    images: [String],
+    category: { type: String, required: true },
+    inventoryCount: { type: Number, default: 1 },
+  },
+  { timestamps: true }
+);
 
 const Product =
   mongoose.models.Product || mongoose.model("Product", productSchema);

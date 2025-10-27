@@ -41,6 +41,8 @@ export const createAuction = async (req, res) => {
       return res.status(400).json({ message: "endAt must be after startAt" });
     }
 
+    // Check if product exists
+
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(403).json({ message: " Product Not Found" });
@@ -80,7 +82,7 @@ export const createAuction = async (req, res) => {
 export const getAllAuctions = async (req, res) => {
   try {
     const auctions = await Auction.find()
-      .populate("product")
+      .populate("product", "title category ")
       .populate("seller", "name email");
     res.json(auctions);
   } catch (err) {
@@ -98,7 +100,7 @@ export const getAllAuctions = async (req, res) => {
 export const getAuctionById = async (req, res) => {
   try {
     const auction = await Auction.findById(req.params.id)
-      .populate("product")
+      .populate("product", "title description category")
       .populate("seller", "name email");
     if (!auction) {
       return res.status(403).json({ message: "Auction Not Found" });
