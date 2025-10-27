@@ -1,4 +1,4 @@
-import Product from "../model/product.js";
+import Product from "../model/Product.js";
 
 /**
  * @desc Create new product (Seller only)

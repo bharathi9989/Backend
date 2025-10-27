@@ -1,4 +1,4 @@
-import Product from "../model/product.js";
+import Product from "../model/Product.js";
 import Auction from "../model/Auction.js";
 
 export const createAuction = async (req, res) => {
@@ -15,18 +15,19 @@ export const createAuction = async (req, res) => {
 
     const { productId, type, startPrice, minIncrement, startAt, endAt } =
       req.body;
+    console.log(req.body);
 
     // 1️⃣ Check if product exists and belongs to this seller
-    // if (
-    //   !productId ||
-    //   !type ||
-    //   startPrice == null ||
-    //   !minIncrement ||
-    //   !startAt ||
-    //   endAt
-    // ) {
-    //   return res.status(400).json({ message: "Missing Required Fields" });
-    // }
+    if (
+      !productId ||
+      !type ||
+      startPrice == null ||
+      !minIncrement ||
+      !startAt ||
+      !endAt
+    ) {
+      return res.status(400).json({ message: "Missing Required Fields" });
+    }
     if (startPrice < 0 || minIncrement <= 0) {
       return res.status(400).json({ message: "Invalid Price or Increment" });
     }
@@ -63,7 +64,7 @@ export const createAuction = async (req, res) => {
       status: new Date(startAt) > new Date() ? "upcoming" : "live",
     });
 
-    res.status(403).json({ message: "Auction created successfully", auction });
+    res.status(201).json({ message: "Auction created successfully", auction });
   } catch (err) {
     console.error("❌ Error creating auction:", err.message);
     res.status(500).json({ message: "Server error" });
@@ -97,7 +98,7 @@ export const getAllAuctions = async (req, res) => {
 export const getAuctionById = async (req, res) => {
   try {
     const auction = await Auction.findById(req.params.id)
-      .populate("products")
+      .populate("product")
       .populate("seller", "name email");
     if (!auction) {
       return res.status(403).json({ message: "Auction Not Found" });

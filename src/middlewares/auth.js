@@ -1,13 +1,12 @@
-import jwt  from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import User from "../model/User.js";
-
 
 export default async function auth(req, res, next) {
   try {
     // 1️⃣ Check if token exists in header
 
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer")) {
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({
         message: "No Token Provided",
       });
@@ -27,13 +26,13 @@ export default async function auth(req, res, next) {
       });
     }
     // 5️⃣ Attach user to request object
-      req.user = user;
-      
-      next();
+    req.user = user;
+
+    next();
   } catch (err) {
-      console.error("❌Auth Middleware Error", err.message)
-      res.status(401).json({
-          message:"Invalid or Expired Token"
-      })
+    console.error("❌Auth Middleware Error", err.message);
+    res.status(401).json({
+      message: "Invalid or Expired Token",
+    });
   }
 }
