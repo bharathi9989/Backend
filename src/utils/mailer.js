@@ -20,17 +20,18 @@ const transporter = nodemailer.createTransport({
  * @param {String} html - email content in HTML
  */
 
-export const sendEmail = async (to, subject, html) => {
+export const sendMail = async (to, subject, html) => {
   try {
     const info = await transporter.sendMail({
-      from: `Auction Platform <${process.env.SMTP_USER}>`,
+      from: `"Auction platform" <${process.env.SMTP_USER}> `,
       to,
       subject,
       html,
     });
 
-    console.log(`Mail sent to ${to}:${info.messageId}`);
+    console.log(`✉️ Mail sent to ${to} : ${info.messageId}`);
+    
   } catch (err) {
-    console.log(`❌Error sending email`);
+    console.error("❌ Error sending email:", err);
   }
 };

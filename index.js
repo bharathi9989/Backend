@@ -7,6 +7,7 @@ import auctionRoutes from "./src/routes/auctionRoutes.js";
 import bidRoutes from "./src/routes/bidRoutes.js";
 import { initSocket } from "./src/socket.js";
 import http from "http";
+import { startAuctionSheduler } from "./src/utils/auctionSheduler.js";
 
 dotenv.config();
 
@@ -35,4 +36,5 @@ app.use("/api/bids", bidRoutes);
 server.listen(process.env.PORT, () => {
   console.log("Application is Working well at ", process.env.PORT);
   connectDB();
+  startAuctionSheduler();
 });
