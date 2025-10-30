@@ -2,6 +2,7 @@
 
 import express from "express";
 import dotenv from "dotenv";
+import cors from "cors";
 import connectDB from "./src/config/db.js";
 import authRoutes from "./src/routes/authRoutes.js";
 import productRoutes from "./src/routes/productRoutes.js";
@@ -20,6 +21,14 @@ const server = http.createServer(app);
 initSocket(server); // initialize socket
 
 app.use(express.json());
+
+// Add after express.json():
+app.use(
+  cors({
+    origin: "http://localhost:5173", // or your frontend URL
+    credentials: true,
+  })
+);
 
 app.use((req, res, next) => {
   console.log(req.method, req.url, new Date().toLocaleString());

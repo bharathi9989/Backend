@@ -11,6 +11,6 @@ const authRoutes = Router();
 
 authRoutes.post("/register", registerUser);
 
-authRoutes.get("/login", loginUser);
+authRoutes.post("/login", loginUser);
 
 export default authRoutes;
