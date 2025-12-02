@@ -1,14 +1,6 @@
-import mongoose, { model, Schema } from "mongoose";
+import mongoose from "mongoose";
 
-/**
- * Bid Schema
- * - auction: auction reference
- * - bidder: user reference
- * - amount: bid amount
- * - createdAt: bid time
- */
-
-const bidSchema = Schema(
+const bidSchema = new mongoose.Schema(
   {
     auction: {
       type: mongoose.Schema.Types.ObjectId,
@@ -21,10 +13,12 @@ const bidSchema = Schema(
       required: true,
     },
     amount: { type: Number, required: true },
+    sealed: { type: Boolean, default: false }, // sealed flag
   },
   { timestamps: true }
 );
 
-const Bid = model("Bid", bidSchema);
+bidSchema.index({ auction: 1, amount: -1 }); // perf for top bids
 
+const Bid = mongoose.models.Bid || mongoose.model("Bid", bidSchema);
 export default Bid;

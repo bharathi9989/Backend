@@ -1,47 +1,39 @@
-import User from "../model/User.js";
+import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-export const registerUser = async (req, res) => {
+export const registerUser = async (req, res, next) => {
   try {
     const { name, email, password, role, contact } = req.body;
-    // console.log(req.body);
+    if (!name || !email || !password)
+      return res
+        .status(400)
+        .json({ message: "Name, email and password required" });
 
-    const existingUser = await User.findOne({ email });
+    const existing = await User.findOne({ email });
+    if (existing)
+      return res.status(400).json({ message: "User already exists" });
 
-    // 1️⃣ Check if user already exists
-
-    if (existingUser) {
-      return res.status(400).json({
-        message: "user already exists",
-      });
-    }
-
-    // 2️⃣ Hash the password before saving
-
-    const salt = await bcrypt.genSalt(Number(process.env.SALT));
-    const hashPassword = await bcrypt.hash(password, salt);
-
-    // 3️⃣ Create New User
+    const saltRounds = Number(
+      process.env.SALT_ROUNDS || process.env.SALT || 10
+    );
+    const salt = await bcrypt.genSalt(saltRounds);
+    const hashed = await bcrypt.hash(password, salt);
 
     const newUser = await User.create({
       name,
       email,
-      hashPassword,
+      hashPassword: hashed,
       role: role || "buyer",
       contact,
     });
 
-    // 4️⃣ Generate JWT token
-
-    const token = jwt.sign({ id: newUser._id }, process.env.SECRET_KEY, {
+    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
     });
 
-    // 5️⃣ Send response
-
-    res.status(200).json({
-      message: "user created successfully",
+    res.status(201).json({
+      message: "User registered",
       user: {
         id: newUser._id,
         name: newUser.name,
@@ -51,40 +43,28 @@ export const registerUser = async (req, res) => {
       token,
     });
   } catch (err) {
-    console.log("❌ Error registering user", err);
-    res.status(500).json({ message: "server Error" });
+    next(err);
   }
 };
 
-export const loginUser = async (req, res) => {
+export const loginUser = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-
-    // 1️⃣ Check if user exists
+    if (!email || !password)
+      return res.status(400).json({ message: "Email and password required" });
 
     const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(400).json({
-        message: "Invalid credentials",
-      });
-    }
-    // 2️⃣ Compare entered password with stored hash
+    if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
-    const isMatch = await bcrypt.compare(password, user.hashPassword);
-    if (!isMatch) {
-      return res.status(400).json({ message: "Invalid Credentials" });
-    }
+    const match = await bcrypt.compare(password, user.hashPassword);
+    if (!match) return res.status(400).json({ message: "Invalid credentials" });
 
-    // 3️⃣ Generate JWT token
-
-    const token = jwt.sign({ id: user._id }, process.env.SECRET_KEY, {
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "7d",
     });
 
-    // 4️⃣ Send response
-
     res.json({
-      message: "Login Successfully",
+      message: "Login successful",
       user: {
         id: user._id,
         name: user.name,
@@ -94,9 +74,16 @@ export const loginUser = async (req, res) => {
       token,
     });
   } catch (err) {
-    console.log("Login Error");
-    res.status({
-      message: "Server Error",
-    });
+    next(err);
+  }
+};
+
+export const me = async (req, res, next) => {
+  try {
+    if (!req.user)
+      return res.status(401).json({ message: "Not authenticated" });
+    res.json({ user: req.user });
+  } catch (err) {
+    next(err);
   }
 };

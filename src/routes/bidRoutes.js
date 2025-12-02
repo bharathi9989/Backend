@@ -1,16 +1,10 @@
-import { Router } from "express";
+import express from "express";
 import auth from "../middlewares/auth.js";
-import { getBidsForAuction, placeBid } from "../controllers/bidController.js";
+import { placeBid, getBidsForAuction } from "../controllers/bidController.js";
 
+const router = express.Router();
 
+router.post("/", auth, placeBid);
+router.get("/:auctionId", auth, getBidsForAuction);
 
-const bidRoutes = Router();
-
-// Place new bid (buyer)
-bidRoutes.post("/", auth, placeBid)
-
-
-// Get all bids for specific auction
-bidRoutes.get("/:auctionId", auth, getBidsForAuction)
-
-export default bidRoutes;
+export default router;

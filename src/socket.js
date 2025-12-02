@@ -1,32 +1,42 @@
-import { Server, Socket } from "socket.io";
+import { Server } from "socket.io";
+import mongoose from "mongoose";
 
-let io;
+let ioInstance = null;
+
 export const initSocket = (server) => {
-  io = new Server(server, {
+  ioInstance = new Server(server, {
     cors: {
-      orgin: "*", // frontend URL
+      origin: process.env.FRONTEND_ORIGIN || "*",
+      methods: ["GET", "POST"],
     },
   });
 
-  io.on(",connection", (socket) => {
-    console.log("User connected", socket.id);
+  ioInstance.on("connection", (socket) => {
+    console.log("Socket connected:", socket.id);
 
-    socket.on("placeBid", (data) => {
-      console.log("Bid recieved", data);
-      io.emit("newBid", data); // broadcast
+    socket.on("joinAuction", (auctionId) => {
+      if (!auctionId) return;
+      if (!mongoose.isValidObjectId(auctionId)) return;
+      const room = `auction:${auctionId}`;
+      socket.join(room);
+      console.log(`Socket ${socket.id} joined ${room}`);
     });
 
-    socket.io("diconnect", () => {
-      console.log("user disconnected", socket.id);
+    socket.on("leaveAuction", (auctionId) => {
+      if (!auctionId) return;
+      const room = `auction:${auctionId}`;
+      socket.leave(room);
+    });
+
+    socket.on("disconnect", () => {
+      // optional cleanup
     });
   });
 
-  return io;
+  return ioInstance;
 };
 
 export const getIO = () => {
-  if (!io) {
-    throw new Error("Socket.io not initialized!");
-  }
-  return io;
+  if (!ioInstance) throw new Error("Socket.io not initialized");
+  return ioInstance;
 };

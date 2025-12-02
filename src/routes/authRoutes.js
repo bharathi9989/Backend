@@ -1,16 +1,10 @@
-import { Router } from "express";
-import { loginUser, registerUser } from "../controllers/userController.js";
+import express from "express";
+import { registerUser, loginUser, me } from "../controllers/userController.js";
+import auth from "../middlewares/auth.js";
+const router = express.Router();
 
-const authRoutes = Router();
+router.post("/register", registerUser);
+router.post("/login", loginUser);
+router.get("/me", auth, me);
 
-/**
- * @desc Register a new user
- * @route POST /api/auth/register
- * @access Public
- */
-
-authRoutes.post("/register", registerUser);
-
-authRoutes.post("/login", loginUser);
-
-export default authRoutes;
+export default router;

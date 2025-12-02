@@ -1,20 +1,17 @@
+import express from "express";
+import auth from "../middlewares/auth.js";
 import {
   createAuction,
   getAllAuctions,
   getAuctionById,
   updateAuctionStatus,
 } from "../controllers/auctionController.js";
-import { Router } from "express";
-import auth from "../middlewares/auth.js";
 
-const auctionRoutes = Router();
+const router = express.Router();
 
-auctionRoutes.post("/", auth, createAuction);
+router.post("/", auth, createAuction);
+router.get("/", getAllAuctions);
+router.get("/:id", getAuctionById);
+router.put("/:id/status", auth, updateAuctionStatus);
 
-auctionRoutes.get("/", getAllAuctions);
-
-auctionRoutes.get("/:id", getAuctionById);
-
-auctionRoutes.put("/:id/status", auth, updateAuctionStatus);
-
-export default auctionRoutes;
+export default router;

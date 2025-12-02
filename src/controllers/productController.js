@@ -1,121 +1,64 @@
-import Product from "../model/Product.js";
+import Product from "../models/Product.js";
 
-/**
- * @desc Create new product (Seller only)
- * @route POST /api/products
- * @access Private
- */
-
-export const createProduct = async (req, res) => {
+export const createProduct = async (req, res, next) => {
   try {
-    if (req.user.role !== "seller") {
+    if (req.user.role !== "seller")
       return res
         .status(403)
-        .json({ message: "Only Seller can Create the Product" });
-    }
+        .json({ message: "Only sellers can create products" });
     const { title, description, images, category, inventoryCount } = req.body;
+    if (!title || !category)
+      return res.status(400).json({ message: "Title and category required" });
 
     const product = await Product.create({
       seller: req.user._id,
       title,
       description,
-      images,
+      images: images || [],
       category,
-      inventoryCount,
+      inventoryCount: inventoryCount ?? 1,
     });
 
-    res.status(201).json({
-      message: "Product Created Successsfully",
-      product,
-    });
+    res.status(201).json({ message: "Product created", product });
   } catch (err) {
-    console.log("Error creating Product", err.message);
-    res.status(500).json({ message: "Server error" });
+    next(err);
   }
 };
 
-/**
- * @desc Get all products
- * @route GET /api/products
- * @access Public
- */
-
-export const getAllProduct = async (req, res) => {
+export const getAllProduct = async (req, res, next) => {
   try {
     const products = await Product.find().populate("seller", "name email");
     res.json(products);
   } catch (err) {
-    console.log(" Error Fetching Data", err.message);
-    res.status(500).json({ message: "Server Error" });
+    next(err);
   }
 };
 
-/**
- * @desc Update product (Seller only)
- * @route PUT /api/products/:id
- * @access Private
- */
-
-export const UpdateProduct = async (req, res) => {
+export const updateProduct = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id);
-    if (!product) {
-      return res.json(403).json({ message: "Product not Found" });
-    }
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    if (!product.seller.equals(req.user._id))
+      return res.status(403).json({ message: "Not authorized" });
 
-    // check if current user is product owner
-
-    if (product.seller.toString() !== req.user._id.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to update this product" });
-    }
-
-    const { title, description, images, category, inventoryCount } = req.body;
-
-    product.title = title || product.title;
-    product.description = description || product.description;
-    product.images = images || product.images;
-    product.category = category || product.category;
-    product.inventoryCount = inventoryCount || product.inventoryCount;
-
-    const updatedProduct = await product.save();
-
-    res.json({
-      message: "product updated successfully",
-      product: updatedProduct,
-    });
+    Object.assign(product, req.body);
+    await product.save();
+    res.json({ message: "Product updated", product });
   } catch (err) {
-    console.log("Error Updataing Product", err.message);
-    res.json({ message: "Server Error" });
+    next(err);
   }
 };
 
-/**
- * @desc Delete product (Seller only)
- * @route DELETE /api/products/:id
- * @access Private
- */
-
-export const deleteProduct = async (req, res) => {
+export const deleteProduct = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id);
-    if (!product) {
-      return res.status(403).json({ message: "product Not Found" });
-    }
-
-    // authorization
-
-    if (product.seller.toString() !== req.user._id.toString()) {
-      return res
-        .json(403)
-        .json({ message: "Not authorized to delete this product" });
-    }
+    if (!product) return res.status(404).json({ message: "Product not found" });
+    if (!product.seller.equals(req.user._id))
+      return res.status(403).json({ message: "Not authorized" });
 
     await product.deleteOne();
-    res.json({ message: "product deleted successfully" });
+    res.json({ message: "Product deleted" });
   } catch (err) {
-    console.error("❌ Error deleting product:", err.message);
-    res.status(500).json({ message: "Server error" });
+    next(err);
   }
 };

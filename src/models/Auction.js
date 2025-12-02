@@ -1,6 +1,6 @@
-import mongoose, { model, Schema, Types } from "mongoose";
+import mongoose from "mongoose";
 
-const auctionSchema = Schema(
+const auctionSchema = new mongoose.Schema(
   {
     product: {
       type: mongoose.Schema.Types.ObjectId,
@@ -17,8 +17,8 @@ const auctionSchema = Schema(
       enum: ["traditional", "reverse", "sealed"],
       default: "traditional",
     },
-    startPrice: { type: Number, required: true },
-    minIncrement: { type: Number, default: 100 },
+    startPrice: { type: Number, required: true, min: 0 },
+    minIncrement: { type: Number, default: 1, min: 0 },
     startAt: { type: Date, required: true },
     endAt: { type: Date, required: true },
     status: {
@@ -26,9 +26,15 @@ const auctionSchema = Schema(
       enum: ["upcoming", "live", "closed"],
       default: "upcoming",
     },
+    winnerBid: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Bid",
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
-const Auction = model("Auction", auctionSchema);
+const Auction =
+  mongoose.models.Auction || mongoose.model("Auction", auctionSchema);
 export default Auction;
