@@ -1,0 +1,257 @@
+{
+  "info": {
+    "name": "Auction Platform Backend",
+    "_postman_id": "a1b2c3d4-e5f6-7890-1234-abcdef123456",
+    "description": "Postman collection for the Auction Platform backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "AUTH",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"Seller 1\",\n    \"email\": \"seller1@example.com\",\n    \"password\": \"password123\",\n    \"role\": \"seller\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/auth/register",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"seller1@example.com\",\n    \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/auth/login",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get /me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "http://localhost:4000/api/auth/me",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "auth", "me"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "PRODUCTS",
+      "item": [
+        {
+          "name": "Create Product (Seller Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"iPhone 15 Pro\",\n  \"description\": \"Brand new phone\",\n  \"images\": [],\n  \"category\": \"Electronics\",\n  \"inventoryCount\": 3\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/products",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "products"]
+            }
+          }
+        },
+        {
+          "name": "Get All Products",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:4000/api/products",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "products"]
+            }
+          }
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated iPhone Title\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/products/{{productId}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "products", "{{productId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "http://localhost:4000/api/products/{{productId}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "products", "{{productId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "AUCTIONS",
+      "item": [
+        {
+          "name": "Create Auction (Seller Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"type\": \"traditional\",\n  \"startPrice\": 50000,\n  \"minIncrement\": 500,\n  \"startAt\": \"2025-01-01T10:00:00.000Z\",\n  \"endAt\": \"2025-01-01T12:00:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/auctions",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "auctions"]
+            }
+          }
+        },
+        {
+          "name": "Get All Auctions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:4000/api/auctions",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "auctions"]
+            }
+          }
+        },
+        {
+          "name": "Get Auction by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:4000/api/auctions/{{auctionId}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "auctions", "{{auctionId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Auction Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"closed\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/auctions/{{auctionId}}/status",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "auctions", "{{auctionId}}", "status"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "BIDS",
+      "item": [
+        {
+          "name": "Place Bid (Buyer Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"auctionId\": \"{{auctionId}}\",\n  \"amount\": 51000\n}"
+            },
+            "url": {
+              "raw": "http://localhost:4000/api/bids",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "bids"]
+            }
+          }
+        },
+        {
+          "name": "Get Bids",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "http://localhost:4000/api/bids/{{auctionId}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "4000",
+              "path": ["api", "bids", "{{auctionId}}"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "token", "value": "" },
+    { "key": "productId", "value": "" },
+    { "key": "auctionId", "value": "" }
+  ]
+}

@@ -25,12 +25,19 @@ export const createProduct = async (req, res, next) => {
   }
 };
 
-export const getAllProduct = async (req, res, next) => {
+export const getAllProduct = async (req, res) => {
   try {
-    const products = await Product.find().populate("seller", "name email");
+    const query = {};
+
+    // If logged in user is seller → return only their products
+    if (req.user && req.user.role === "seller") {
+      query.seller = req.user._id;
+    }
+
+    const products = await Product.find(query).populate("seller", "name email");
     res.json(products);
   } catch (err) {
-    next(err);
+    res.status(500).json({ message: "Error loading products" });
   }
 };
 
