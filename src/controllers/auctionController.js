@@ -97,7 +97,10 @@ export const getAuctionById = async (req, res, next) => {
 export const updateAuctionStatus = async (req, res, next) => {
   try {
     const { status } = req.body;
-    const auction = await Auction.findById(req.params.id);
+    const auction = await Auction.findById(req.params.id).populate(
+      "product",
+      "title description images category inventoryCount"
+    );
     if (!auction) return res.status(404).json({ message: "Auction not found" });
     if (!auction.seller.equals(req.user._id))
       return res.status(403).json({ message: "Not authorized" });

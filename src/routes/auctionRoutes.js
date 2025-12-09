@@ -10,8 +10,8 @@ import {
 const router = express.Router();
 
 router.post("/", auth, createAuction);
-router.get("/", getAllAuctions);
-router.get("/:id", getAuctionById);
+router.get("/", auth, getAllAuctions);
+router.get("/:id", auth, getAuctionById);
 router.put("/:id/status", auth, updateAuctionStatus);
 
 export default router;
