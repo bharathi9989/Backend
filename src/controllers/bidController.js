@@ -219,3 +219,23 @@ export const getBidsForAuction = async (req, res, next) => {
     next(err);
   }
 };
+
+
+export const getBuyerSummary = async (req, res) => {
+  const userId = req.user._id;
+
+  const totalBids = await Bid.countDocuments({ bidder: userId });
+
+  const wonAuctions = await Auction.countDocuments({
+    winnerBid: { $exists: true },
+    status: "closed",
+    seller: { $ne: userId },
+  });
+
+  const activeBids = await Auction.countDocuments({
+    endAt: { $gt: new Date() },
+    status: "live",
+  });
+
+  res.json({ totalBids, wonAuctions, activeBids });
+};

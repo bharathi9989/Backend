@@ -22,5 +22,6 @@ export const sendMail = async (to, subject, html) => {
     html,
   });
   console.log(`✉️ Mail sent to ${to}: ${info.messageId}`);
+  console.log("SMTP CONFIG:", process.env.SMTP_HOST, process.env.SMTP_PORT);
   return info;
 };

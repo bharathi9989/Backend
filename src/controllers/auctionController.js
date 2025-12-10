@@ -68,6 +68,12 @@ export const getAllAuctions = async (req, res) => {
 
     const query = {};
 
+    // SELLER FILTER 🔥🔥🔥
+    // If logged-in user is seller → show ONLY seller's auctions
+    if (req.user && req.user.role === "seller") {
+      query.seller = req.user._id;
+    }
+
     // status filter
     if (status === "live") {
       query.startAt = { $lte: new Date() };
@@ -83,7 +89,7 @@ export const getAllAuctions = async (req, res) => {
       query.category = category;
     }
 
-    // sorting
+    // sorting options
     let sortQuery = {};
     if (sort === "price_high") sortQuery.startPrice = -1;
     if (sort === "price_low") sortQuery.startPrice = 1;
@@ -111,7 +117,6 @@ export const getAllAuctions = async (req, res) => {
     res.status(500).json({ message: "Error loading auctions" });
   }
 };
-
 export const getAuctionById = async (req, res, next) => {
   try {
     const auction = await Auction.findById(req.params.id)
@@ -151,5 +156,174 @@ export const updateAuctionStatus = async (req, res, next) => {
     res.json({ message: "Auction status updated", auction });
   } catch (err) {
     next(err);
+  }
+};
+
+// CLOSE AUCTION IMMEDIATELY (Seller Only)
+export const closeAuctionNow = async (req, res) => {
+  try {
+    const auctionId = req.params.id;
+
+    const auction = await Auction.findById(auctionId)
+      .populate("product")
+      .populate("seller")
+      .exec();
+
+    if (!auction)
+      return res.status(404).json({ message: "Auction not found" });
+
+    // Only seller can close his auction
+    if (!auction.seller._id.equals(req.user._id)) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    // Already closed?
+    if (auction.status === "closed") {
+      return res.status(400).json({ message: "Auction already closed" });
+    }
+
+    // Find winner depending on auction type
+    let winnerBid = null;
+
+    if (auction.type === "reverse") {
+      winnerBid = await Bid.findOne({ auction: auctionId })
+        .sort({ amount: 1 })
+        .populate("bidder");
+    } else {
+      // traditional + sealed
+      winnerBid = await Bid.findOne({ auction: auctionId })
+        .sort({ amount: -1 })
+        .populate("bidder");
+    }
+
+    // Update auction status
+    auction.status = "closed";
+    auction.winnerBid = winnerBid ? winnerBid._id : null;
+
+    // Update product inventory
+    const product = auction.product;
+    if (winnerBid) {
+      if (product.inventoryCount > 0) {
+        product.inventoryCount -= 1;
+        if (product.inventoryCount <= 0) {
+          product.status = "sold";
+        }
+      }
+      await product.save();
+    }
+
+    await auction.save();
+
+    // Send emails (seller + winner)
+    if (auction.seller?.email) {
+      await sendMail(
+        auction.seller.email,
+        `Auction Closed: ${auction.product.title}`,
+        `<p>Your auction was manually closed.</p>
+         ${
+           winnerBid
+             ? `<p>Winner: ${winnerBid.bidder.name}, ₹${winnerBid.amount}</p>`
+             : `<p>No bids were placed.</p>`
+         }`
+      );
+    }
+
+    if (winnerBid && winnerBid.bidder?.email) {
+      await sendMail(
+        winnerBid.bidder.email,
+        `You won the auction: ${auction.product.title}`,
+        `<p>You won with a bid of ₹${winnerBid.amount}.</p>`
+      );
+    }
+
+    // socket emit (optional)
+    try {
+      const io = getIO();
+      io.to(`auction:${auctionId}`).emit("auctionClosed", {
+        auctionId,
+        winner: winnerBid
+          ? {
+              id: winnerBid.bidder._id,
+              name: winnerBid.bidder.name,
+              amount: winnerBid.amount,
+            }
+          : null,
+        closedBy: "seller",
+      });
+    } catch (err) {
+      console.log("Socket emit failed:", err.message);
+    }
+
+    return res.json({
+      message: "Auction closed successfully",
+      winner: winnerBid ? winnerBid.bidder.name : null,
+    });
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({ message: "Error closing auction" });
+  }
+};
+
+export const relistProduct = async (req, res) => {
+  try {
+    const { productId, startPrice, minIncrement, startAt, endAt, type } =
+      req.body;
+
+    // Validate input
+    if (
+      !productId ||
+      !startPrice ||
+      !minIncrement ||
+      !startAt ||
+      !endAt ||
+      !type
+    )
+      return res.status(400).json({ message: "Missing required fields" });
+
+    const product = await Product.findById(productId);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    // Must belong to seller
+    if (!product.seller.equals(req.user._id))
+      return res.status(403).json({ message: "Not your product" });
+
+    // Must be UNSOLD
+    if (product.status !== "unsold")
+      return res.status(400).json({ message: "Product is not unsold" });
+
+    const start = new Date(startAt);
+    const end = new Date(endAt);
+
+    if (isNaN(start) || isNaN(end))
+      return res.status(400).json({ message: "Invalid dates" });
+    if (end <= start)
+      return res.status(400).json({ message: "endAt must be after startAt" });
+
+    // Determine auction status
+    const status = start > new Date() ? "upcoming" : "live";
+
+    // Create new auction
+    const newAuction = await Auction.create({
+      product: productId,
+      seller: req.user._id,
+      type,
+      startPrice,
+      minIncrement,
+      startAt,
+      endAt,
+      status,
+    });
+
+    // Product goes back to "available / listed" state
+    product.status = "unsold"; // still unsold but available for re-auction
+    await product.save();
+
+    res.json({
+      message: "Product re-listed successfully",
+      auction: newAuction,
+    });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: "Failed to re-list product" });
   }
 };
