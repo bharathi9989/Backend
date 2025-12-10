@@ -60,14 +60,55 @@ export const createAuction = async (req, res, next) => {
   }
 };
 
-export const getAllAuctions = async (req, res, next) => {
+// controllers/auctionController.js
+
+export const getAllAuctions = async (req, res) => {
   try {
-    const auctions = await Auction.find()
-      .populate("product", "title category")
-      .populate("seller", "name email");
-    res.json(auctions);
+    const { status, category, page = 1, limit = 9, sort } = req.query;
+
+    const query = {};
+
+    // status filter
+    if (status === "live") {
+      query.startAt = { $lte: new Date() };
+      query.endAt = { $gte: new Date() };
+    } else if (status === "upcoming") {
+      query.startAt = { $gt: new Date() };
+    } else if (status === "ended") {
+      query.endAt = { $lt: new Date() };
+    }
+
+    // category filter
+    if (category) {
+      query.category = category;
+    }
+
+    // sorting
+    let sortQuery = {};
+    if (sort === "price_high") sortQuery.startPrice = -1;
+    if (sort === "price_low") sortQuery.startPrice = 1;
+    if (sort === "ending_soon") sortQuery.endAt = 1;
+    if (sort === "newest") sortQuery.createdAt = -1;
+
+    const skip = (page - 1) * limit;
+
+    const auctions = await Auction.find(query)
+      .populate("product")
+      .populate("seller", "name")
+      .sort(sortQuery)
+      .skip(skip)
+      .limit(Number(limit));
+
+    const total = await Auction.countDocuments(query);
+
+    res.json({
+      auctions,
+      total,
+      page: Number(page),
+      pages: Math.ceil(total / limit),
+    });
   } catch (err) {
-    next(err);
+    res.status(500).json({ message: "Error loading auctions" });
   }
 };
 
