@@ -11,6 +11,12 @@ const userSchema = new mongoose.Schema(
       default: "buyer",
     },
     contact: { type: String },
+    notificationSettings: {
+      outbid: { type: Boolean, default: true },
+      win: { type: Boolean, default: true },
+      auctionStart: { type: Boolean, default: true },
+      auctionEnd: { type: Boolean, default: true },
+    },
   },
   { timestamps: true }
 );

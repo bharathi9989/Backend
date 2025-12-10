@@ -6,15 +6,13 @@ import { sendMail } from "./mailer.js";
 
 /**
  * startAuctionScheduler(io)
- * Checks auctions ended and closes them. Emits via io.
+ * Runs every minute and closes ended auctions.
  */
 export const startAuctionScheduler = (io) => {
-  // initial immediate check
   checkAndCloseAuctions(io).catch((err) =>
     console.error("Scheduler initial check failed:", err)
   );
 
-  // schedule every minute
   nodeCron.schedule("* * * * *", async () => {
     await checkAndCloseAuctions(io);
   });
@@ -34,11 +32,13 @@ const checkAndCloseAuctions = async (io) => {
 
     for (const auction of ended) {
       try {
-        // mark closed
         auction.status = "closed";
 
-        // pick winner based on type
+        // -----------------------------------------
+        // 🏆 Choose winner based on auction type
+        // -----------------------------------------
         let winnerBid = null;
+
         if (auction.type === "traditional" || auction.type === "sealed") {
           winnerBid = await Bid.findOne({ auction: auction._id })
             .sort({ amount: -1 })
@@ -49,17 +49,22 @@ const checkAndCloseAuctions = async (io) => {
             .populate("bidder");
         }
 
+        // -----------------------------------------
+        // 📦 Handle Product inventory
+        // -----------------------------------------
         if (winnerBid) {
           auction.winnerBid = winnerBid._id;
-          // mark product sold and decrement inventory
+
           const product = auction.product;
           if (product && product.inventoryCount > 0) {
-            product.inventoryCount = product.inventoryCount - 1;
+            product.inventoryCount -= 1;
+
             if (product.inventoryCount <= 0) product.status = "sold";
+
             await product.save();
           }
         } else {
-          // no winner — mark unsold
+          // No winner → product remains unsold
           const product = auction.product;
           if (product) {
             product.status = "unsold";
@@ -69,17 +74,25 @@ const checkAndCloseAuctions = async (io) => {
 
         await auction.save();
 
-        // notify seller
-        if (auction.seller?.email) {
-          const sellerHtml = `<h3>Hello ${auction.seller.name}</h3>
+        // -----------------------------------------
+        // ✉️ Notify Seller — ONLY IF ENABLED
+        // -----------------------------------------
+        const sellerNotifyOn =
+          auction.seller?.notificationSettings?.auctionEnd !== false;
+
+        if (auction.seller?.email && sellerNotifyOn) {
+          const sellerHtml = `
+            <h3>Hello ${auction.seller.name}</h3>
             <p>Your auction <b>${
               auction.product?.title || "product"
-            }</b> ended.</p>
+            }</b> has ended.</p>
             ${
               winnerBid
                 ? `<p>Winner: ${winnerBid.bidder.name} — ₹${winnerBid.amount}</p>`
-                : "<p>No bids were placed.</p>"
-            }`;
+                : "<p>No valid bids were placed.</p>"
+            }
+          `;
+
           try {
             await sendMail(
               auction.seller.email,
@@ -91,10 +104,19 @@ const checkAndCloseAuctions = async (io) => {
           }
         }
 
-        // notify winner
-        if (winnerBid && winnerBid.bidder?.email) {
-          const winnerHtml = `<h3>Congrats ${winnerBid.bidder.name}</h3>
-            <p>You won <b>${auction.product?.title}</b> with ₹${winnerBid.amount}.</p>`;
+        // -----------------------------------------
+        // 🏆 Notify Winner — ONLY IF ENABLED
+        // -----------------------------------------
+        const winnerNotifyOn =
+          winnerBid?.bidder?.notificationSettings?.win !== false;
+
+        if (winnerBid && winnerBid.bidder?.email && winnerNotifyOn) {
+          const winnerHtml = `
+            <h3>Congratulations ${winnerBid.bidder.name} 🎉</h3>
+            <p>You won <b>${auction.product?.title}</b>!</p>
+            <p>Winning Amount: <b>₹${winnerBid.amount}</b></p>
+          `;
+
           try {
             await sendMail(
               winnerBid.bidder.email,
@@ -106,7 +128,9 @@ const checkAndCloseAuctions = async (io) => {
           }
         }
 
-        // socket emit
+        // -----------------------------------------
+        // 🔔 SOCKET EVENT TO CLIENTS
+        // -----------------------------------------
         if (io) {
           io.to(`auction:${auction._id}`).emit("auctionClosed", {
             auctionId: auction._id,

@@ -13,6 +13,8 @@ import auctionRoutes from "./src/routes/auctionRoutes.js";
 import bidRoutes from "./src/routes/bidRoutes.js";
 import { startAuctionScheduler } from "./src/utils/auctionSheduler.js";
 import { errorHandler } from "./src/middlewares/errorHandler.js";
+import profileRoutes from "./src/routes/profileRoutes.js";
+import userRoutes from "./src/routes/userRoutes.js";
 
 const PORT = process.env.PORT || 4000;
 const app = express();
@@ -40,6 +42,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/auctions", auctionRoutes);
 app.use("/api/bids", bidRoutes);
+app.use("/api/profile", profileRoutes);
+app.use("/api/users", userRoutes);
 
 // global error handler
 app.use(errorHandler);

@@ -87,3 +87,22 @@ export const me = async (req, res, next) => {
     next(err);
   }
 };
+
+export const updateNotificationSettings = async (req, res) => {
+  try {
+    const user = req.user;
+    const { auctionEnd, newBid } = req.body;
+
+    user.notificationSettings.auctionEnd =
+      auctionEnd ?? user.notificationSettings.auctionEnd;
+
+    user.notificationSettings.newBid =
+      newBid ?? user.notificationSettings.newBid;
+
+    await user.save();
+
+    res.json({ message: "Notification settings updated", user });
+  } catch (err) {
+    res.status(500).json({ message: "Failed to update settings" });
+  }
+};
