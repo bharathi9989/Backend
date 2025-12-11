@@ -21,7 +21,13 @@ const router = express.Router();
  * - POST /         -> create auction (seller only)
  * - PUT /:id/status-> update auction status (seller only)
  */
-router.get("/", getAllAuctions); // public
+router.get("/", (req, res, next) => {
+  // If user requests seller-only auctions (my=true), enforce auth
+  if (req.query.my === "true") {
+    return auth(req, res, () => getAllAuctions(req, res, next));
+  }
+  return getAllAuctions(req, res, next);
+}); // public
 router.get("/:id", getAuctionById); // public
 
 router.post("/", auth, createAuction); // protected (seller)
