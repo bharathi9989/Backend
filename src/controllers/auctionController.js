@@ -64,17 +64,16 @@ export const createAuction = async (req, res, next) => {
 
 export const getAllAuctions = async (req, res) => {
   try {
-    const { status, category, page = 1, limit = 9, sort } = req.query;
+    const { status, category, page = 1, limit = 9, sort, my } = req.query;
 
     const query = {};
 
-    // SELLER FILTER 🔥🔥🔥
-    // If logged-in user is seller → show ONLY seller's auctions
-    if (req.user && req.user.role === "seller") {
+    // 👉 Filter only seller’s auctions
+    if (my === "true") {
       query.seller = req.user._id;
     }
 
-    // status filter
+    // Status filter
     if (status === "live") {
       query.startAt = { $lte: new Date() };
       query.endAt = { $gte: new Date() };
@@ -84,12 +83,12 @@ export const getAllAuctions = async (req, res) => {
       query.endAt = { $lt: new Date() };
     }
 
-    // category filter
+    // Category filter
     if (category) {
       query.category = category;
     }
 
-    // sorting options
+    // Sorting
     let sortQuery = {};
     if (sort === "price_high") sortQuery.startPrice = -1;
     if (sort === "price_low") sortQuery.startPrice = 1;
@@ -169,8 +168,7 @@ export const closeAuctionNow = async (req, res) => {
       .populate("seller")
       .exec();
 
-    if (!auction)
-      return res.status(404).json({ message: "Auction not found" });
+    if (!auction) return res.status(404).json({ message: "Auction not found" });
 
     // Only seller can close his auction
     if (!auction.seller._id.equals(req.user._id)) {
