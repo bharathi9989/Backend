@@ -64,58 +64,76 @@ export const createAuction = async (req, res, next) => {
 
 export const getAllAuctions = async (req, res) => {
   try {
-    const { status, category, page = 1, limit = 9, sort, my } = req.query;
+    const {
+      status,
+      type,
+      category,
+      page = 1,
+      limit = 12,
+      sort,
+      my,
+    } = req.query;
 
+    const now = new Date();
     const query = {};
 
-    // 👉 Filter only seller’s auctions
-    if (my === "true") {
+    // seller's auctions only
+    if (my === "true" && req.user) {
       query.seller = req.user._id;
     }
 
-    // Status filter
+    // Time-based status filters
     if (status === "live") {
-      query.startAt = { $lte: new Date() };
-      query.endAt = { $gte: new Date() };
+      query.startAt = { $lte: now };
+      query.endAt = { $gte: now };
+      query.status = { $ne: "closed" };
     } else if (status === "upcoming") {
-      query.startAt = { $gt: new Date() };
-    } else if (status === "ended") {
-      query.endAt = { $lt: new Date() };
+      query.startAt = { $gt: now };
+    } else if (status === "closed") {
+      query.endAt = { $lt: now };
+      query.status = "closed";
     }
 
-    // Category filter
-    if (category) {
-      query.category = category;
-    }
+    if (type) query.type = type;
 
-    // Sorting
-    let sortQuery = {};
-    if (sort === "price_high") sortQuery.startPrice = -1;
-    if (sort === "price_low") sortQuery.startPrice = 1;
-    if (sort === "ending_soon") sortQuery.endAt = 1;
-    if (sort === "newest") sortQuery.createdAt = -1;
-
-    const skip = (page - 1) * limit;
-
-    const auctions = await Auction.find(query)
+    let auctions = await Auction.find(query)
       .populate("product")
       .populate("seller", "name")
-      .sort(sortQuery)
-      .skip(skip)
-      .limit(Number(limit));
+      .sort(sortAuction(sort));
 
-    const total = await Auction.countDocuments(query);
+    // Filter out deleted / missing products
+    auctions = auctions.filter((a) => a.product);
+
+    // category filter (product based)
+    if (category) {
+      auctions = auctions.filter(
+        (a) => a.product?.category?.toLowerCase() === category.toLowerCase()
+      );
+    }
+
+    const total = auctions.length;
+    const start = (page - 1) * limit;
+    const end = start + Number(limit);
 
     res.json({
-      auctions,
+      auctions: auctions.slice(start, end),
       total,
       page: Number(page),
       pages: Math.ceil(total / limit),
     });
   } catch (err) {
+    console.log(err);
     res.status(500).json({ message: "Error loading auctions" });
   }
 };
+
+function sortAuction(sort) {
+  if (sort === "priceAsc") return { startPrice: 1 };
+  if (sort === "priceDesc") return { startPrice: -1 };
+  if (sort === "endingSoon") return { endAt: 1 };
+  if (sort === "newest") return { createdAt: -1 };
+  return {};
+}
 export const getAuctionById = async (req, res, next) => {
   try {
     const auction = await Auction.findById(req.params.id)
@@ -159,6 +177,7 @@ export const updateAuctionStatus = async (req, res, next) => {
 };
 
 // CLOSE AUCTION IMMEDIATELY (Seller Only)
+// CLOSE AUCTION IMMEDIATELY (Seller Only)
 export const closeAuctionNow = async (req, res) => {
   try {
     const auctionId = req.params.id;
@@ -198,8 +217,13 @@ export const closeAuctionNow = async (req, res) => {
     auction.status = "closed";
     auction.winnerBid = winnerBid ? winnerBid._id : null;
 
-    // Update product inventory
+    // FIX: product validation
     const product = auction.product;
+    if (!product) {
+      return res.status(500).json({ message: "Product missing in auction" });
+    }
+
+    // Update product inventory
     if (winnerBid) {
       if (product.inventoryCount > 0) {
         product.inventoryCount -= 1;
@@ -207,47 +231,64 @@ export const closeAuctionNow = async (req, res) => {
           product.status = "sold";
         }
       }
+      // If NO winner → product becomes unsold
+      if (!winnerBid) {
+        product.status = "unsold";
+        await product.save();
+      }
+      await product.save();
+      if (q) {
+        query["product.title"] = { $regex: q, $options: "i" };
+      }
+    } else {
+      // No bids → mark unsold
+      product.status = "unsold";
       await product.save();
     }
 
     await auction.save();
 
-    // Send emails (seller + winner)
-    if (auction.seller?.email) {
-      await sendMail(
-        auction.seller.email,
-        `Auction Closed: ${auction.product.title}`,
-        `<p>Your auction was manually closed.</p>
-         ${
-           winnerBid
-             ? `<p>Winner: ${winnerBid.bidder.name}, ₹${winnerBid.amount}</p>`
-             : `<p>No bids were placed.</p>`
-         }`
-      );
-    }
-
-    if (winnerBid && winnerBid.bidder?.email) {
-      await sendMail(
-        winnerBid.bidder.email,
-        `You won the auction: ${auction.product.title}`,
-        `<p>You won with a bid of ₹${winnerBid.amount}.</p>`
-      );
-    }
-
-    // socket emit (optional)
+    // SEND EMAILS SAFELY
     try {
-      const io = getIO();
-      io.to(`auction:${auctionId}`).emit("auctionClosed", {
-        auctionId,
-        winner: winnerBid
-          ? {
-              id: winnerBid.bidder._id,
-              name: winnerBid.bidder.name,
-              amount: winnerBid.amount,
-            }
-          : null,
-        closedBy: "seller",
-      });
+      if (auction.seller?.email) {
+        await sendMail(
+          auction.seller.email,
+          `Auction Closed: ${auction.product.title}`,
+          `<p>Your auction was manually closed.</p>
+           ${
+             winnerBid
+               ? `<p>Winner: ${winnerBid.bidder.name}, ₹${winnerBid.amount}</p>`
+               : `<p>No bids were placed.</p>`
+           }`
+        );
+      }
+
+      if (winnerBid?.bidder?.email) {
+        await sendMail(
+          winnerBid.bidder.email,
+          `You won the auction: ${product.title}`,
+          `<p>You won with a bid of ₹${winnerBid.amount}.</p>`
+        );
+      }
+    } catch (err) {
+      console.log("Email error:", err.message);
+    }
+
+    // SOCKET (optional)
+    try {
+      if (global.io) {
+        global.io.to(`auction:${auctionId}`).emit("auctionClosed", {
+          auctionId,
+          winner: winnerBid
+            ? {
+                id: winnerBid.bidder._id,
+                name: winnerBid.bidder.name,
+                amount: winnerBid.amount,
+              }
+            : null,
+          closedBy: "seller",
+        });
+      }
     } catch (err) {
       console.log("Socket emit failed:", err.message);
     }

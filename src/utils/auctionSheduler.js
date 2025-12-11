@@ -23,6 +23,7 @@ export const startAuctionScheduler = (io) => {
 const checkAndCloseAuctions = async (io) => {
   try {
     const now = new Date();
+
     const ended = await Auction.find({
       endAt: { $lte: now },
       status: { $ne: "closed" },
@@ -34,39 +35,36 @@ const checkAndCloseAuctions = async (io) => {
       try {
         auction.status = "closed";
 
-        // -----------------------------------------
-        // 🏆 Choose winner based on auction type
-        // -----------------------------------------
         let winnerBid = null;
 
         if (auction.type === "traditional" || auction.type === "sealed") {
           winnerBid = await Bid.findOne({ auction: auction._id })
             .sort({ amount: -1 })
             .populate("bidder");
-        } else if (auction.type === "reverse") {
+        } else {
           winnerBid = await Bid.findOne({ auction: auction._id })
             .sort({ amount: 1 })
             .populate("bidder");
         }
 
-        // -----------------------------------------
-        // 📦 Handle Product inventory
-        // -----------------------------------------
-        if (winnerBid) {
+        const product = auction.product;
+
+        // Save auction + product safely
+        if (winnerBid && winnerBid.bidder) {
           auction.winnerBid = winnerBid._id;
 
-          const product = auction.product;
           if (product && product.inventoryCount > 0) {
             product.inventoryCount -= 1;
 
-            if (product.inventoryCount <= 0) product.status = "sold";
+            if (product.inventoryCount <= 0) {
+              product.status = "sold";
+            }
 
             await product.save();
           }
         } else {
-          // No winner → product remains unsold
-          const product = auction.product;
-          if (product) {
+          // No winner
+          if (product && product.status !== "sold") {
             product.status = "unsold";
             await product.save();
           }
@@ -75,69 +73,42 @@ const checkAndCloseAuctions = async (io) => {
         await auction.save();
 
         // -----------------------------------------
-        // ✉️ Notify Seller — ONLY IF ENABLED
+        // EMAILS (SAFE MODE)
         // -----------------------------------------
-        const sellerNotifyOn =
-          auction.seller?.notificationSettings?.auctionEnd !== false;
-
-        if (auction.seller?.email && sellerNotifyOn) {
-          const sellerHtml = `
-            <h3>Hello ${auction.seller.name}</h3>
-            <p>Your auction <b>${
-              auction.product?.title || "product"
-            }</b> has ended.</p>
-            ${
-              winnerBid
-                ? `<p>Winner: ${winnerBid.bidder.name} — ₹${winnerBid.amount}</p>`
-                : "<p>No valid bids were placed.</p>"
-            }
-          `;
-
-          try {
+        try {
+          if (auction.seller?.email) {
             await sendMail(
               auction.seller.email,
-              `Your auction "${auction.product?.title}" ended`,
-              sellerHtml
+              `Auction ended: ${product?.title || "Product"}`,
+              winnerBid
+                ? `<p>Winner: ${winnerBid.bidder?.name} — ₹${winnerBid.amount}</p>`
+                : `<p>No bids received.</p>`
             );
-          } catch (err) {
-            console.error("Mail to seller failed:", err.message);
           }
+        } catch (err) {
+          console.log("Seller email failed:", err.message);
         }
 
-        // -----------------------------------------
-        // 🏆 Notify Winner — ONLY IF ENABLED
-        // -----------------------------------------
-        const winnerNotifyOn =
-          winnerBid?.bidder?.notificationSettings?.win !== false;
-
-        if (winnerBid && winnerBid.bidder?.email && winnerNotifyOn) {
-          const winnerHtml = `
-            <h3>Congratulations ${winnerBid.bidder.name} 🎉</h3>
-            <p>You won <b>${auction.product?.title}</b>!</p>
-            <p>Winning Amount: <b>₹${winnerBid.amount}</b></p>
-          `;
-
-          try {
+        try {
+          if (winnerBid?.bidder?.email) {
             await sendMail(
               winnerBid.bidder.email,
-              `You won "${auction.product?.title}"`,
-              winnerHtml
+              `You won the auction!`,
+              `<p>Winning Bid: ₹${winnerBid.amount}</p>`
             );
-          } catch (err) {
-            console.error("Mail to winner failed:", err.message);
           }
+        } catch (err) {
+          console.log("Winner email failed:", err.message);
         }
 
-        // -----------------------------------------
-        // 🔔 SOCKET EVENT TO CLIENTS
-        // -----------------------------------------
+        // SOCKET
         if (io) {
           io.to(`auction:${auction._id}`).emit("auctionClosed", {
             auctionId: auction._id,
             winner: winnerBid
               ? {
-                  id: winnerBid.bidder._id,
-                  name: winnerBid.bidder.name,
+                  id: winnerBid.bidder?._id,
+                  name: winnerBid.bidder?.name,
                   amount: winnerBid.amount,
                 }
               : null,
@@ -145,9 +116,9 @@ const checkAndCloseAuctions = async (io) => {
           });
         }
 
-        console.log(`✅ Auction closed: ${auction._id}`);
+        console.log(`✔ Scheduler closed auction: ${auction._id}`);
       } catch (procErr) {
-        console.error("Error closing auction:", procErr);
+        console.error("Error processing auction:", procErr);
       }
     }
   } catch (err) {
