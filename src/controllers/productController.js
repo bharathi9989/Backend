@@ -2,27 +2,23 @@
 import Product from "../models/Product.js";
 
 /**
- * Create product (seller only). Accepts multipart form-data with optional file field "image".
+ * createProduct - seller only
  */
 export const createProduct = async (req, res, next) => {
   try {
-    if (!req.user || req.user.role !== "seller") {
+    if (!req.user || req.user.role !== "seller")
       return res
         .status(403)
         .json({ message: "Only sellers can create products" });
-    }
 
-    const { title, description, category, inventoryCount } = req.body;
-    if (!title || !category) {
+    const { title, description = "", category, inventoryCount } = req.body;
+    if (!title || !category)
       return res.status(400).json({ message: "Title and category required" });
-    }
 
-    // Multer (Cloudinary) will attach file info at req.file
+    // images support: multer -> req.file.path OR body.images (array or JSON string)
     const images = [];
-    if (req.file && req.file.path) {
-      images.push(req.file.path);
-    } else if (req.body.images) {
-      // fallback: support client sending array or single url in field 'images'
+    if (req.file && req.file.path) images.push(req.file.path);
+    else if (req.body.images) {
       try {
         const parsed =
           typeof req.body.images === "string"
@@ -30,7 +26,6 @@ export const createProduct = async (req, res, next) => {
             : req.body.images;
         if (Array.isArray(parsed)) images.push(...parsed);
       } catch {
-        // if it's a single URL string
         if (typeof req.body.images === "string" && req.body.images.trim())
           images.push(req.body.images.trim());
       }
@@ -38,42 +33,44 @@ export const createProduct = async (req, res, next) => {
 
     const product = await Product.create({
       seller: req.user._id,
-      title,
-      description,
+      title: String(title).trim(),
+      description: String(description).trim(),
       images,
-      category,
-      inventoryCount: inventoryCount ?? 1,
+      category: String(category).trim(),
+      inventoryCount: Number(inventoryCount ?? 1),
       status: "active",
     });
 
-    res.status(201).json({ message: "Product created", product });
+    return res.status(201).json({ message: "Product created", product });
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * Get products.
- * If auth middleware attaches req.user and seller role then returns only that seller products.
- * Public access can also list all (depending on your design) — we'll keep seller-specific by default when auth present.
+ * getAllProduct
+ * - If auth present and user is seller -> return only seller products
+ * - Otherwise -> return public products (status active/unsold/sold as you choose)
  */
 export const getAllProduct = async (req, res, next) => {
   try {
     const query = {};
-
-    if (req.user && req.user.role === "seller") {
-      query.seller = req.user._id;
+    // Sellers see only their products
+    if (req.user && req.user.role === "seller") query.seller = req.user._id;
+    // Public: show active and unsold items; keep sold hidden for marketplace
+    if (!req.user || req.user.role !== "seller") {
+      query.status = { $in: ["active", "unsold"] };
     }
 
     const products = await Product.find(query).populate("seller", "name email");
-    res.json(products);
+    return res.json(products);
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * Update product (seller only). Accepts multipart file "image" to replace/add.
+ * updateProduct (seller only)
  */
 export const updateProduct = async (req, res, next) => {
   try {
@@ -82,11 +79,17 @@ export const updateProduct = async (req, res, next) => {
     if (!product.seller.equals(req.user._id))
       return res.status(403).json({ message: "Not authorized" });
 
-    const updates = { ...req.body };
+    const updates = {};
+    if (req.body.title) updates.title = String(req.body.title).trim();
+    if (req.body.description)
+      updates.description = String(req.body.description).trim();
+    if (req.body.category) updates.category = String(req.body.category).trim();
+    if (req.body.inventoryCount != null)
+      updates.inventoryCount = Number(req.body.inventoryCount);
 
-    // If file uploaded, replace images array with uploaded URL (or prepend)
+    // images handling
     if (req.file && req.file.path) {
-      // Option: replace first image
+      // replace images array (common expectation)
       updates.images = [req.file.path];
     } else if (req.body.images) {
       try {
@@ -96,7 +99,6 @@ export const updateProduct = async (req, res, next) => {
             : req.body.images;
         if (Array.isArray(parsed)) updates.images = parsed;
       } catch {
-        // keep as string
         if (typeof req.body.images === "string" && req.body.images.trim())
           updates.images = [req.body.images.trim()];
       }
@@ -104,14 +106,14 @@ export const updateProduct = async (req, res, next) => {
 
     Object.assign(product, updates);
     await product.save();
-    res.json({ message: "Product updated", product });
+    return res.json({ message: "Product updated", product });
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * Delete product
+ * deleteProduct (seller only)
  */
 export const deleteProduct = async (req, res, next) => {
   try {
@@ -121,7 +123,7 @@ export const deleteProduct = async (req, res, next) => {
       return res.status(403).json({ message: "Not authorized" });
 
     await product.deleteOne();
-    res.json({ message: "Product deleted" });
+    return res.json({ message: "Product deleted" });
   } catch (err) {
     next(err);
   }

@@ -3,11 +3,8 @@ import Bid from "../models/Bid.js";
 import Auction from "../models/Auction.js";
 
 /**
- * GET /api/bids/my
- * Query params:
- *  - page (optional), limit (optional)
- *
- * Response: { bids: [...], page, totalPages, total }
+ * getMyBids
+ * returns paginated bids with outcome (won/lost/pending)
  */
 export const getMyBids = async (req, res, next) => {
   try {
@@ -16,7 +13,6 @@ export const getMyBids = async (req, res, next) => {
     const limit = Math.min(100, Number(req.query.limit) || 20);
     const skip = (page - 1) * limit;
 
-    // Fetch bids by user with auction & product populated
     const [total, bids] = await Promise.all([
       Bid.countDocuments({ bidder: userId }),
       Bid.find({ bidder: userId })
@@ -30,38 +26,24 @@ export const getMyBids = async (req, res, next) => {
         .populate("bidder", "name email"),
     ]);
 
-    // Compute outcome per bid (won/lost/pending) without heavy DB calls
-    // For an auction that is closed and has winnerBid set — compare id
+    // Compute outcome
     const bidsWithStatus = await Promise.all(
       bids.map(async (b) => {
         const auction = b.auction;
         let outcome = "pending";
-
         if (!auction) {
           outcome = "pending";
         } else if (auction.status !== "closed") {
           outcome = "pending";
         } else {
-          // auction closed - determine winner
-          // prefer explicit winnerBid field (if you set it in scheduler)
+          // If auction has winnerBid set, compare to this bid's id
           if (auction.winnerBid) {
-            // winnerBid may be ObjectId
             outcome =
-              auction.winnerBid.toString() === b._id.toString() ||
-              auction.winnerBid.toString() === b._id?.toString()
-                ? "won"
-                : b.bidder && auction.winnerBid.toString() === b._id?.toString()
-                ? "won"
-                : auction.winnerBid.toString() === b._id?.toString()
+              auction.winnerBid.toString() === b._id.toString()
                 ? "won"
                 : "lost";
-
-            // But winnerBid may refer to bid._id — compare bid._id
-            if (auction.winnerBid.toString() === b._id.toString())
-              outcome = "won";
-            else outcome = "lost";
           } else {
-            // fallback: compute from DB (safe)
+            // fallback compute winner from DB
             try {
               const winner =
                 auction.type === "reverse"
@@ -71,13 +53,11 @@ export const getMyBids = async (req, res, next) => {
                   : await Bid.findOne({ auction: auction._id })
                       .sort({ amount: -1 })
                       .limit(1);
-
               outcome =
                 winner && winner._id.toString() === b._id.toString()
                   ? "won"
                   : "lost";
-            } catch (e) {
-              // fallback to pending if something odd
+            } catch {
               outcome = "pending";
             }
           }
@@ -103,7 +83,7 @@ export const getMyBids = async (req, res, next) => {
       })
     );
 
-    res.json({
+    return res.json({
       bids: bidsWithStatus,
       page,
       totalPages: Math.ceil(total / limit),
