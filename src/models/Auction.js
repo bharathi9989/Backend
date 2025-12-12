@@ -31,6 +31,7 @@ const auctionSchema = new mongoose.Schema(
       ref: "Bid",
       default: null,
     },
+    closedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

@@ -1,4 +1,5 @@
 // src/controllers/auctionController.js
+import mongoose from "mongoose";
 import Auction from "../models/Auction.js";
 import Product from "../models/Product.js";
 import Bid from "../models/Bid.js";
@@ -224,99 +225,200 @@ export const updateAuctionStatus = async (req, res, next) => {
 /**
  * closeAuctionNow (seller only) - SDE-3 robust
  */
+// SDE-3 transaction-safe closeAuctionNow
 export const closeAuctionNow = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const auctionId = req.params.id;
+    if (!req.user)
+      return res.status(401).json({ message: "Not authenticated" });
+
+    await session.startTransaction();
+
+    // Load auction with product + seller inside session
     const auction = await Auction.findById(auctionId)
+      .session(session)
       .populate("product")
-      .populate("seller")
-      .exec();
-    if (!auction) return res.status(404).json({ message: "Auction not found" });
+      .populate("seller");
 
-    if (!auction.seller._id.equals(req.user._id))
+    if (!auction) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: "Auction not found" });
+    }
+
+    // Auth: only seller owning the auction can close
+    if (!auction.seller || !auction.seller._id.equals(req.user._id)) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(403).json({ message: "Not authorized" });
-    if (auction.status === "closed")
-      return res.status(400).json({ message: "Auction already closed" });
+    }
 
+    // Idempotency: if already closed -> 409 (conflict)
+    if (auction.status === "closed") {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(409).json({ message: "Auction already closed" });
+    }
+
+    // Product must exist
     const product = auction.product;
-    if (!product)
-      return res.status(500).json({ message: "Product missing in auction" });
+    if (!product) {
+      await session.abortTransaction();
+      session.endSession();
+      return res
+        .status(500)
+        .json({ message: "Product missing in auction. Cannot close." });
+    }
 
-    // pick winner
+    // Select winner inside transaction
     let winnerBid = null;
     if (auction.type === "reverse") {
       winnerBid = await Bid.findOne({ auction: auctionId })
+        .session(session)
         .sort({ amount: 1 })
         .populate("bidder");
     } else {
+      // traditional + sealed -> highest wins
       winnerBid = await Bid.findOne({ auction: auctionId })
+        .session(session)
         .sort({ amount: -1 })
         .populate("bidder");
     }
 
-    // update auction + product (atomic not required here but ensure correct order)
-    auction.status = "closed";
-    auction.winnerBid = winnerBid ? winnerBid._id : null;
+    const winnerBidId = winnerBid ? winnerBid._id : null;
+    const now = new Date();
 
+    // Defensive conditional update: only set to closed if status !== closed (avoid race)
+    const updateRes = await Auction.updateOne(
+      { _id: auctionId, status: { $ne: "closed" } },
+      {
+        $set: {
+          status: "closed",
+          winnerBid: winnerBidId,
+          closedAt: now,
+        },
+      }
+    ).session(session);
+
+    // If matched but not modified -> matchedCount>0 && modifiedCount===0 means concurrent writer changed something
+    if (updateRes.matchedCount > 0 && updateRes.modifiedCount === 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res
+        .status(409)
+        .json({
+          message: "Auction was closed concurrently, reload and try again",
+        });
+    }
+
+    // If matchedCount === 0: perhaps auction was deleted concurrently (rare)
+    if (updateRes.matchedCount === 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: "Auction not found or modified" });
+    }
+
+    // Update product inventory safely inside session
     if (winnerBid) {
-      product.inventoryCount = Math.max(0, (product.inventoryCount || 0) - 1);
-      product.status = product.inventoryCount === 0 ? "sold" : "active";
+      // decrement inventory only if > 0
+      const newInventory = Math.max(0, (product.inventoryCount || 0) - 1);
+      product.inventoryCount = newInventory;
+      // If becomes zero mark as sold; otherwise keep previous status or active
+      product.status = newInventory === 0 ? "sold" : product.status || "active";
     } else {
-      product.status = "unsold";
+      // no winner: mark unsold (allow relist)
+      product.status = product.status === "sold" ? "sold" : "unsold";
     }
 
-    await product.save();
-    await auction.save();
+    // Save product in session
+    await product.save({ session });
 
-    // emails (best-effort)
-    try {
-      if (auction.seller?.email) {
-        await sendMail(
-          auction.seller.email,
-          `Auction Closed: ${product.title}`,
-          `<p>Your auction has been closed.</p>${
-            winnerBid
-              ? `<p>Winner: ${winnerBid.bidder.name} — ₹${winnerBid.amount}</p>`
-              : `<p>No bids placed.</p>`
-          }`
-        );
-      }
-      if (winnerBid?.bidder?.email) {
-        await sendMail(
-          winnerBid.bidder.email,
-          `You won the auction: ${product.title}`,
-          `<p>You won with a bid of ₹${winnerBid.amount}.</p>`
-        );
-      }
-    } catch (emailErr) {
-      console.error("Email error:", emailErr.message);
-    }
+    // Commit
+    await session.commitTransaction();
+    session.endSession();
 
-    // socket emit (best-effort)
+    // --- Post-commit side effects (outside transaction) ---
+    // Emails (best-effort, don't fail request on error)
+    (async () => {
+      try {
+        if (auction.seller?.email) {
+          const sellerHtml = `
+            <h3>Hello ${auction.seller.name || "Seller"}</h3>
+            <p>Your auction for <strong>${
+              product.title || "product"
+            }</strong> was closed.</p>
+            ${
+              winnerBid
+                ? `<p>Winner: ${winnerBid.bidder?.name || "Buyer"} — ₹${
+                    winnerBid.amount
+                  }</p>`
+                : `<p>No bids were placed.</p>`
+            }
+          `;
+          await sendMail(
+            auction.seller.email,
+            `Auction Closed: ${product.title}`,
+            sellerHtml
+          );
+        }
+      } catch (err) {
+        console.error("Seller email failed:", err?.message || err);
+      }
+
+      try {
+        if (winnerBid?.bidder?.email) {
+          const winnerHtml = `<h3>Congratulations ${winnerBid.bidder.name}</h3>
+            <p>You won <strong>${product.title}</strong> with ₹${winnerBid.amount}.</p>`;
+          await sendMail(
+            winnerBid.bidder.email,
+            `You won: ${product.title}`,
+            winnerHtml
+          );
+        }
+      } catch (err) {
+        console.error("Winner email failed:", err?.message || err);
+      }
+    })();
+
+    // Socket emit
     try {
-      const io = getIO();
+      const io = (function () {
+        try {
+          return getIO();
+        } catch {
+          return global.io || null;
+        }
+      })();
+
       if (io) {
         io.to(`auction:${auctionId}`).emit("auctionClosed", {
           auctionId,
           closedBy: "seller",
           winner: winnerBid
             ? {
-                id: winnerBid.bidder._id,
-                name: winnerBid.bidder.name,
+                id: winnerBid.bidder?._id,
+                name: winnerBid.bidder?.name,
                 amount: winnerBid.amount,
               }
             : null,
+          closedAt: now,
         });
       }
     } catch (emitErr) {
-      console.error("Socket emit failed:", emitErr.message);
+      console.error("Socket emit failed:", emitErr?.message || emitErr);
     }
 
+    // Final response
     return res.json({
       message: "Auction closed successfully",
-      winner: winnerBid ? winnerBid.bidder.name : null,
+      winner: winnerBid ? winnerBid.bidder?.name || "Winner" : null,
     });
   } catch (err) {
+    try {
+      await session.abortTransaction();
+    } catch (e) {}
+    session.endSession();
     console.error("closeAuctionNow ERROR:", err);
     return res.status(500).json({ message: "Error closing auction" });
   }
