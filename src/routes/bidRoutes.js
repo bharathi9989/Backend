@@ -6,10 +6,13 @@ import { getMyBids } from "../controllers/bidHistoryController.js";
 const router = express.Router();
 
 router.post("/", auth, placeBid);
-router.get("/:auctionId", auth, getBidsForAuction);
 
 router.get("/my", auth, getMyBids);
-router.get("/summary",auth,getBuyerSummary)
+router.get("/summary", auth, getBuyerSummary);
+
+router.get("/:auctionId", auth, getBidsForAuction);
+
+
 
 
 

@@ -28,11 +28,15 @@ router.get("/", (req, res, next) => {
   }
   return getAllAuctions(req, res, next);
 }); // public
-router.get("/:id", getAuctionById); // public
 
-router.post("/", auth, createAuction); // protected (seller)
+
+// router.post("/", auth, createAuction); // protected (seller)
 router.put("/:id/status", auth, updateAuctionStatus); // protected (seller)
 router.put("/:id/close", auth, closeAuctionNow);
 router.post("/relist", auth, relistProduct);
+
+
+router.get("/:id", getAuctionById); // public
+
 
 export default router;

@@ -34,6 +34,11 @@ export const createAuction = async (req, res, next) => {
 
     const product = await Product.findById(productId);
     if (!product) return res.status(404).json({ message: "Product not found" });
+    // Search
+    if (req.query.q) {
+      const q = req.query.q.trim();
+      query["product.title"] = { $regex: q, $options: "i" };
+    }
     if (!product.seller.equals(req.user._id))
       return res
         .status(403)
@@ -62,9 +67,19 @@ export const createAuction = async (req, res, next) => {
 
 // controllers/auctionController.js
 
+/**
+ * GET /auctions
+ * Supports:
+ * - Search (q)
+ * - Filters: status, type, category
+ * - Sort: newest, endingSoon, priceAsc, priceDesc
+ * - Pagination
+ * - my=true → seller's own auctions
+ */
 export const getAllAuctions = async (req, res) => {
   try {
     const {
+      q,
       status,
       type,
       category,
@@ -75,57 +90,114 @@ export const getAllAuctions = async (req, res) => {
     } = req.query;
 
     const now = new Date();
-    const query = {};
+    const mongoQuery = {};
+    const skip = (page - 1) * limit;
 
-    // seller's auctions only
+    /** --------------------------
+     * 1. MY AUCTIONS (PRIVATE)
+     --------------------------- */
     if (my === "true" && req.user) {
-      query.seller = req.user._id;
+      mongoQuery.seller = req.user._id;
     }
 
-    // Time-based status filters
+    /** --------------------------
+     * 2. STATUS FILTERS
+     --------------------------- */
     if (status === "live") {
-      query.startAt = { $lte: now };
-      query.endAt = { $gte: now };
-      query.status = { $ne: "closed" };
+      mongoQuery.startAt = { $lte: now };
+      mongoQuery.endAt = { $gte: now };
+      mongoQuery.status = { $ne: "closed" };
     } else if (status === "upcoming") {
-      query.startAt = { $gt: now };
+      mongoQuery.startAt = { $gt: now };
     } else if (status === "closed") {
-      query.endAt = { $lt: now };
-      query.status = "closed";
+      mongoQuery.status = "closed";
     }
 
-    if (type) query.type = type;
+    /** --------------------------
+     * 3. TYPE FILTER
+     --------------------------- */
+    if (type) mongoQuery.type = type;
 
-    let auctions = await Auction.find(query)
-      .populate("product")
-      .populate("seller", "name")
-      .sort(sortAuction(sort));
-
-    // Filter out deleted / missing products
-    auctions = auctions.filter((a) => a.product);
-
-    // category filter (product based)
+    /** --------------------------
+     * 4. CATEGORY FILTER
+     --------------------------- */
     if (category) {
-      auctions = auctions.filter(
-        (a) => a.product?.category?.toLowerCase() === category.toLowerCase()
-      );
+      mongoQuery["product.category"] = category;
     }
 
-    const total = auctions.length;
-    const start = (page - 1) * limit;
-    const end = start + Number(limit);
+    /** --------------------------
+     * 5. 🔍 SEARCH FILTER (SDE-3 logic)
+     * Search inside:
+     *   - product.title
+     *   - product.description
+     *   - product.category
+     --------------------------- */
+    let searchStage = {};
+    if (q) {
+      const regex = new RegExp(q, "i");
+      searchStage = {
+        $or: [
+          { "product.title": regex },
+          { "product.description": regex },
+          { "product.category": regex },
+        ],
+      };
+    }
 
-    res.json({
-      auctions: auctions.slice(start, end),
+    /** --------------------------
+     * 6. AGGREGATION PIPELINE (Amazon-grade)
+     --------------------------- */
+    const pipeline = [
+      { $lookup: {
+          from: "products",
+          localField: "product",
+          foreignField: "_id",
+          as: "product",
+        }
+      },
+      { $unwind: "$product" },
+
+      { $match: mongoQuery },
+
+      ...(q ? [{ $match: searchStage }] : []),
+
+      { $sort: buildSort(sort) },
+
+      { $facet: {
+          data: [
+            { $skip: skip },
+            { $limit: Number(limit) }
+          ],
+          total: [{ $count: "count" }]
+      }}
+    ];
+
+    const result = await Auction.aggregate(pipeline);
+
+    const auctions = result[0].data;
+    const total =
+      result[0].total.length > 0 ? result[0].total[0].count : 0;
+
+    return res.json({
+      auctions,
       total,
       page: Number(page),
       pages: Math.ceil(total / limit),
     });
   } catch (err) {
-    console.log(err);
+    console.log("Auction search error:", err);
     res.status(500).json({ message: "Error loading auctions" });
   }
 };
+
+/** Sorting helper */
+function buildSort(sort) {
+  if (sort === "newest") return { createdAt: -1 };
+  if (sort === "endingSoon") return { endAt: 1 };
+  if (sort === "priceAsc") return { startPrice: 1 };
+  if (sort === "priceDesc") return { startPrice: -1 };
+  return { createdAt: -1 };
+}
 
 function sortAuction(sort) {
   if (sort === "priceAsc") return { startPrice: 1 };
@@ -178,18 +250,23 @@ export const updateAuctionStatus = async (req, res, next) => {
 
 // CLOSE AUCTION IMMEDIATELY (Seller Only)
 // CLOSE AUCTION IMMEDIATELY (Seller Only)
+/**
+ * CLOSE AUCTION IMMEDIATELY (Seller Only) — SDE-3 Clean Version
+ */
 export const closeAuctionNow = async (req, res) => {
   try {
     const auctionId = req.params.id;
 
+    // Load auction fully
     const auction = await Auction.findById(auctionId)
       .populate("product")
       .populate("seller")
       .exec();
 
-    if (!auction) return res.status(404).json({ message: "Auction not found" });
+    if (!auction)
+      return res.status(404).json({ message: "Auction not found" });
 
-    // Only seller can close his auction
+    // Authorization check
     if (!auction.seller._id.equals(req.user._id)) {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -199,7 +276,19 @@ export const closeAuctionNow = async (req, res) => {
       return res.status(400).json({ message: "Auction already closed" });
     }
 
-    // Find winner depending on auction type
+    // Validate product reference
+    const product = auction.product;
+    if (!product) {
+      return res.status(500).json({
+        message: "Product missing in auction. Cannot close."
+      });
+    }
+
+    /**
+     * Winner Logic
+     * - Traditional + Sealed → highest bid wins
+     * - Reverse → lowest bid wins
+     */
     let winnerBid = null;
 
     if (auction.type === "reverse") {
@@ -207,62 +296,55 @@ export const closeAuctionNow = async (req, res) => {
         .sort({ amount: 1 })
         .populate("bidder");
     } else {
-      // traditional + sealed
       winnerBid = await Bid.findOne({ auction: auctionId })
         .sort({ amount: -1 })
         .populate("bidder");
     }
 
-    // Update auction status
+    /**
+     * Update Auction Status
+     */
     auction.status = "closed";
     auction.winnerBid = winnerBid ? winnerBid._id : null;
 
-    // FIX: product validation
-    const product = auction.product;
-    if (!product) {
-      return res.status(500).json({ message: "Product missing in auction" });
-    }
-
-    // Update product inventory
+    /**
+     * Update Product Inventory (ZERO BUG Logic)
+     */
     if (winnerBid) {
-      if (product.inventoryCount > 0) {
-        product.inventoryCount -= 1;
-        if (product.inventoryCount <= 0) {
-          product.status = "sold";
-        }
-      }
-      // If NO winner → product becomes unsold
-      if (!winnerBid) {
-        product.status = "unsold";
-        await product.save();
-      }
-      await product.save();
-      if (q) {
-        query["product.title"] = { $regex: q, $options: "i" };
-      }
+      // Someone won → reduce inventory
+      product.inventoryCount = Math.max(0, product.inventoryCount - 1);
+
+      // If inventory is zero → mark as sold
+      product.status = product.inventoryCount === 0 ? "sold" : "active";
     } else {
-      // No bids → mark unsold
+      // No bids → product usable for re-auction
       product.status = "unsold";
-      await product.save();
     }
 
+    await product.save();
     await auction.save();
 
-    // SEND EMAILS SAFELY
+    /**
+     * Send Emails (Protected)
+     */
     try {
+      // Seller email
       if (auction.seller?.email) {
         await sendMail(
           auction.seller.email,
-          `Auction Closed: ${auction.product.title}`,
-          `<p>Your auction was manually closed.</p>
-           ${
-             winnerBid
-               ? `<p>Winner: ${winnerBid.bidder.name}, ₹${winnerBid.amount}</p>`
-               : `<p>No bids were placed.</p>`
-           }`
+          `Auction Closed: ${product.title}`,
+          `
+            <p>Your auction has been closed manually.</p>
+            ${
+              winnerBid
+                ? `<p>Winner: ${winnerBid.bidder.name} — ₹${winnerBid.amount}</p>`
+                : `<p>No bids were placed.</p>`
+            }
+          `
         );
       }
 
+      // Winner email
       if (winnerBid?.bidder?.email) {
         await sendMail(
           winnerBid.bidder.email,
@@ -271,14 +353,17 @@ export const closeAuctionNow = async (req, res) => {
         );
       }
     } catch (err) {
-      console.log("Email error:", err.message);
+      console.log("Email sending failed:", err.message);
     }
 
-    // SOCKET (optional)
+    /**
+     * Emit Socket Event
+     */
     try {
       if (global.io) {
         global.io.to(`auction:${auctionId}`).emit("auctionClosed", {
           auctionId,
+          closedBy: "seller",
           winner: winnerBid
             ? {
                 id: winnerBid.bidder._id,
@@ -286,7 +371,6 @@ export const closeAuctionNow = async (req, res) => {
                 amount: winnerBid.amount,
               }
             : null,
-          closedBy: "seller",
         });
       }
     } catch (err) {
@@ -297,8 +381,9 @@ export const closeAuctionNow = async (req, res) => {
       message: "Auction closed successfully",
       winner: winnerBid ? winnerBid.bidder.name : null,
     });
+
   } catch (err) {
-    console.log(err);
+    console.log("closeAuctionNow ERROR:", err);
     return res.status(500).json({ message: "Error closing auction" });
   }
 };

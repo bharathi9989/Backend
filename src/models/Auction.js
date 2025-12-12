@@ -37,4 +37,7 @@ const auctionSchema = new mongoose.Schema(
 
 const Auction =
   mongoose.models.Auction || mongoose.model("Auction", auctionSchema);
+auctionSchema.index({ startAt: 1, endAt: 1 });
+auctionSchema.index({ type: 1 });
+auctionSchema.index({ status: 1 });
 export default Auction;
