@@ -30,7 +30,7 @@ router.get("/", (req, res, next) => {
 }); // public
 
 
-// router.post("/", auth, createAuction); // protected (seller)
+router.post("/", auth, createAuction); // protected (seller)
 router.put("/:id/status", auth, updateAuctionStatus); // protected (seller)
 router.put("/:id/close", auth, closeAuctionNow);
 router.post("/relist", auth, relistProduct);

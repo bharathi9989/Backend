@@ -24,7 +24,14 @@ export const placeBid = async (req, res, next) => {
     if (!Number.isFinite(parsedAmount) || parsedAmount < 0)
       return res.status(400).json({ message: "Invalid bid amount" });
 
+    
+    
+
+
     session.startTransaction();
+
+
+    
 
     // load auction inside session
     const auction = await Auction.findById(auctionId)
