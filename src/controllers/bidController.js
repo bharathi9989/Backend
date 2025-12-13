@@ -25,7 +25,7 @@ export const placeBid = async (req, res, next) => {
       return res.status(400).json({ message: "Invalid bid amount" });
 
     
-    
+
 
 
     session.startTransaction();
@@ -47,12 +47,17 @@ export const placeBid = async (req, res, next) => {
       await session.abortTransaction();
       return res.status(400).json({ message: "Auction has not started yet" });
     }
+
+
+    
     if (new Date(auction.endAt) < now || auction.status === "closed") {
       await session.abortTransaction();
       return res
         .status(400)
         .json({ message: "Auction already ended or closed" });
     }
+
+    
 
     // Fetch current highest / lowest *with bidder populated* inside session
     let currentHighest = null;
