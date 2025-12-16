@@ -22,15 +22,32 @@ const app = express();
 // security middlewares (minimal)
 app.use(helmet());
 app.use(express.json());
+import cors from "cors";
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://auctionsplatform.netlify.app/",
+];
+
 app.use(
   cors({
-    origin:
-      process.env.FRONTEND_ORIGIN ||
-      "http://localhost:5173" ||
-      "https://auctionsplatform.netlify.app/",
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true); // allow Postman, curl
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS not allowed"));
+      }
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// 🔥 THIS LINE IS MANDATORY
+app.options("*", cors());
 
 // simple logger
 app.use((req, res, next) => {
