@@ -47,6 +47,7 @@ app.use(
   })
 );
 
+
 // 🔥 THIS LINE IS MANDATORY
 app.options("*", cors());
 
