@@ -25,6 +25,7 @@ app.use(express.json());
 
 import cors from "cors";
 
+
 const allowedOrigins = [
   "http://localhost:5173",
   "https://auctionsplatform.netlify.app",
@@ -32,14 +33,16 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: function (origin, callback) {
+    origin: (origin, callback) => {
+      // allow server-to-server, Postman, curl
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("CORS not allowed"));
+        return callback(null, true);
       }
+
+      // ❌ DO NOT THROW ERROR
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -48,8 +51,6 @@ app.use(
 );
 
 
-// 🔥 THIS LINE IS MANDATORY
-app.options("*", cors());
 
 // simple logger
 app.use((req, res, next) => {
