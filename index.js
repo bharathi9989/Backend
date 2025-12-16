@@ -22,7 +22,6 @@ const app = express();
 // security middlewares (minimal)
 app.use(helmet());
 app.use(express.json());
-import cors from "cors";
 
 const allowedOrigins = [
   "http://localhost:5173",
