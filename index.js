@@ -23,11 +23,9 @@ const app = express();
 app.use(helmet());
 app.use(express.json());
 
-
-
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://auctionsplatform.netlify.app",
+  "https://auctionplatformguvi.netlify.app",
 ];
 
 app.use(
@@ -48,8 +46,6 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
-
 
 // simple logger
 app.use((req, res, next) => {
