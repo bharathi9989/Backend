@@ -25,7 +25,7 @@ app.use(express.json());
 
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://spiffy-medovik-94e665.netlify.app/",
+  "https://auctionguviplatform.netlify.app/",
 ];
 
 app.use(
