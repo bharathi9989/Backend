@@ -47,7 +47,6 @@ app.use(
   })
 );
 
-app.options("/*", cors());
 
 // simple logger
 app.use((req, res, next) => {
